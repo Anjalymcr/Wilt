@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: wilt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: 339712809429.dkr.ecr.ap-southeast-2.amazonaws.com/wilt-frontend:latest
+          ports:
+            - containerPort: 80
+          envFrom:
+            - secretRef:
+                name: wilt-secrets
+            - configMapRef:
+                name: wilt-config
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: wilt
+spec:
+  type: LoadBalancer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  selector:
+    app: frontend
+

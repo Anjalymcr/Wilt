@@ -4,7 +4,7 @@ import './App.css';
 
 // Create an axios instance with base URL and headers
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000', 
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8080', 
   withCredentials: false,
   headers: {
     'Content-Type': 'application/json',
@@ -105,7 +105,7 @@ const App = () => {
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
-      const response = await api.post('/wilt/register/', formData);
+      const response = await api.post('/api/register/', formData);
       if (response.status === 201) {
         setError('Registration successful! Please login.');
         setIsRegistering(false);

@@ -1,0 +1,105 @@
+pipeline {
+    agent any
+    environment {
+        AWS_ACCOUNT_ID = credentials('AWS_ACCOUNT_ID')
+        AWS_REGION = 'ap-south-2'
+        FRONTEND_REPO = 'wilt-frontend'
+        BACKEND_REPO = 'wilt-backend'
+        CLUSTER_NAME = 'wilt-cluster'
+        PIPELINE_TYPE = "${params.PIPELINE_TYPE ?: 'ci'}"
+    }
+
+
+    stages {
+        stage('CI Pipeline') {
+            when {
+                expression {
+                    PIPELINE_TYPE == 'ci'
+                }
+            }
+            stages {
+                stage('Build and Push Images') {
+                    parallel {
+                        stage('Frontend') {
+                            steps{
+                                dir('wilt-frontend') {
+                                    sh """
+                                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                                    docker build -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${FRONTEND_REPO}:${BUILD_NUMBER} .
+                                    docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${FRONTEND_REPO}:${BUILD_NUMBER}
+                                    """
+                                }
+                            }
+                        }
+
+                        stage('Backend') {
+                            steps{
+                                dir('wilt-backend') {
+                                    sh """
+                                    docker build -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${BACKEND_REPO}:${BUILD_NUMBER} .
+                                    docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${BACKEND_REPO}:${BUILD_NUMBER}
+                                    """
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage(' Trigger CD Pipeline') {
+            steps {
+                build(job: 'wilt-cd-pipeline', 
+                parameters: [
+                    string(name: 'PIPELINE_TYPE', value: 'cd'),
+                    string(name: 'BUILD_NUMBER', value: "${BUILD_NUMBER}"),
+                ]
+            }  
+        }
+    }
+}
+
+stage('CD Pipeline') {
+    when {
+        expression { PIPELINE_TYPE == 'cd'   }
+    }
+
+    stages {
+        stage('Deploy to EKS') {
+            steps {
+                script {
+
+                    sh "aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}"
+
+                    sh """
+                    sed -i 's|image:.*frontend|image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${FRONTEND_REPO}:${BUILD_NUMBER}|g' kubernetes/frontend-deployment.yaml
+                    sed -i 's|image:.*backend|image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${BACKEND_REPO}:${BUILD_NUMBER}|g' kubernetes/backend-deployment.yaml
+                    
+                    kubectl apply -f k8s/namespace.yaml
+                    kubectl apply -f k8s/frontend-deployment.yaml
+                    kubectl apply -f k8s/backend-deployment.yaml
+
+                    """
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    sh "kubectl rollout status deployment/frontend -n wilt"
+                    sh "kubectl rollout status deployment/backend -n wilt"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline ${PIPELINE_TYPE} completed successfully"
+        }
+        failure {
+            echo "Pipeline ${PIPELINE_TYPE} failed"
+        }
+    }
+}

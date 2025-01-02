@@ -1,0 +1,58 @@
+
+services:
+  wilt-frontend:
+    build: 
+      context: ./wilt-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - wilt-backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+
+
+  wilt-backend:
+    build: 
+      context: ./wilt-backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8000"
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=backend.settings
+      - ALLOWED_HOSTS=localhost,127.0.0.1
+      - CORS_ALLOW_ALL_ORIGINS=true
+      # Database
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+    depends_on:
+      - db
+    working_dir: /app
+    command: >
+      sh -c "python manage.py migrate && 
+             python manage.py runserver 0.0.0.0:8000"
+      
+  db:
+    image: postgres:17
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+
+
+
+  
+
+
